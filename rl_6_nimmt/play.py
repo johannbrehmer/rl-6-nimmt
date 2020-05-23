@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import logging
-from .game import SechsNimmtEnv
+from .env import SechsNimmtEnv
 
 logger = logging.getLogger(__name__)
 

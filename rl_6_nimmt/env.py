@@ -3,7 +3,7 @@ from gym import Env
 from gym.spaces import Discrete, Tuple
 import logging
 
-logger = logging.getLogger(__name)
+logger = logging.getLogger(__name__)
 
 
 class InvalidMoveException(Exception):
@@ -33,12 +33,12 @@ class SechsNimmtEnv(Env):
 
         self._board = [[] for _ in range(self._num_rows)]
         self._hands = [[] for _ in range(self._num_players)]
-        self._scores = np.zeros(self._num_players)
+        self._scores = np.zeros(self._num_players, dtype=np.int)
 
     def reset(self):
         """ Resets the state of the environment and returns an initial observation. """
         self._deal()
-        self._scores = np.zeros(self._num_players)
+        self._scores = np.zeros(self._num_players, dtype=np.int)
         states, done, info = self._create_states()
         return states
 
@@ -54,11 +54,11 @@ class SechsNimmtEnv(Env):
     def render(self, mode="human"):
         """ Report game progress somehow """
         logger.info("")
-        for player, (score, hand) in enumerate(self.hands):
-            logger.info(f"Player {player + 1:i}: {score:>3i} Hornochsen, cards " + " ".join([f"{card + 1:>3i}" for card in hand]))
-        logger.info("Game state:")
-        for row, cards in enumerate(self.board):
-            logger.info(f"  [{row + 1:i}]: " + " ".join([f"{card + 1:>3i}" for card in cards]))
+        for player, (score, hand) in enumerate(zip(self._scores, self._hands)):
+            logger.info(f"Player {player + 1:d}: {score:>3d} Hornochsen, cards " + " ".join([f"{card + 1:>3d}" for card in hand]))
+        logger.info("Board:")
+        for row, cards in enumerate(self._board):
+            logger.info(f"  [{row + 1:d}]: " + " ".join([f"{card + 1:>3d}" for card in cards]))
         logger.info("")
 
     def _deal(self):
@@ -68,7 +68,7 @@ class SechsNimmtEnv(Env):
         cards = list(cards)
 
         for player in range(self._num_players):
-            self._hands[player] = cards[:10]  # pop() does not support multiple indices, does it?
+            self._hands[player] = sorted(cards[:10])  # pop() does not support multiple indices, does it?
             del cards[:10]
 
         for row in range(self._num_rows):
@@ -77,17 +77,18 @@ class SechsNimmtEnv(Env):
     def _check_move(self, player, card):
         """ Check legality of a move and raise an exception otherwise"""
         if card not in self._hands[player]:
-            raise InvalidMoveException(f"Player {player + 1} tried to play card {card + 1}, but their hand is {self.hands[player]}")
+            raise InvalidMoveException(f"Player {player + 1} tried to play card {card + 1}, but their hand is {self._hands[player]}")
 
     def _play_cards(self, cards):
         """ Given one played card per player, play the cards, score points, and update the game """
         rewards = np.zeros(self._num_players)
         associated_players = {card: player for player, card in enumerate(cards)}
         for card in sorted(cards):
-            row = self._find_row(card)
+            row, replaced = self._find_row(card)
             self._board[row].append(card)
+            self._hands[associated_players[card]].remove(card)
 
-            if len(self._board[row]) >= self._threshold:
+            if replaced or len(self._board[row]) >= self._threshold:
                 rewards += self._score_row(row, associated_players[card])
 
         return rewards
@@ -95,13 +96,14 @@ class SechsNimmtEnv(Env):
     def _find_row(self, card):
         """ Find which row a card has to go in """
         thresholds = [(row, cards[-1]) for row, cards in enumerate(self._board)]
-        thresholds = sorted(thresholds, key=lambda x: x[1])  # Sort by card threshold
+        thresholds = sorted(thresholds, key=lambda x: -x[1])  # Sort by card threshold
 
-        if card < thresholds[0][1]:
-            return self._pick_row_to_replace()
+        if card < thresholds[-1][1]:
+            return self._pick_row_to_replace(), True
+
         for row, threshold in thresholds:
             if card > threshold:
-                return row
+                return row, False
 
         raise ValueError(f"Cannot fit card {card} into thresholds {thresholds}")
 
@@ -121,7 +123,7 @@ class SechsNimmtEnv(Env):
         return rewards
 
     def _create_states(self):
-        done = len(self._hands[0]) > 0
+        done = len(self._hands[0]) == 0
         states = [self._create_game_state()]
         for player in range(self._num_players):
             states.append(self._create_agent_state(player))
@@ -131,8 +133,8 @@ class SechsNimmtEnv(Env):
     def _create_game_state(self):
         """ Builds game state """
         board_array = -np.ones((self._num_rows, self._threshold))
-        for row in self.board:
-            for i, card in enumerate(row):
+        for row, cards in enumerate(self._board):
+            for i, card in enumerate(cards):
                 board_array[row, i] = card
 
         if self._include_summaries:
