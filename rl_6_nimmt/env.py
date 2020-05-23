@@ -141,9 +141,9 @@ class SechsNimmtEnv(Env):
             cards_per_row = np.array([len(cards) for cards in self._board])
             highest_per_row = np.array([cards[-1] for cards in self._board])
             score_per_row = np.array([self._row_value(cards, include_last=True) for cards in self._board])
-            state = np.hstack((cards_per_row, highest_per_row, score_per_row, board_array.flatten()))
+            state = np.hstack(([self._num_players], cards_per_row, highest_per_row, score_per_row, board_array.flatten()))
         else:
-            state = np.flatten(board_array)
+            state = np.hstack(([self._num_players], board_array.flatten()))
 
         return state
 
