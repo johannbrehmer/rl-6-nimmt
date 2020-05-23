@@ -1,6 +1,9 @@
 import numpy as np
 from gym import Env
 from gym.spaces import Discrete, Tuple
+import logging
+
+logger = logging.getLogger(__name)
 
 
 class InvalidMoveException(Exception):
@@ -18,6 +21,10 @@ class SechsNimmtEnv(Env):
     def __init__(self, num_players, num_rows=4, num_cards=104, threshold=6, include_summaries=True):
         super().__init__()
 
+        assert num_players > 0
+        assert num_rows > 0
+        assert num_cards >= 10 * num_players + num_rows
+
         self._num_players = num_players
         self._num_rows = num_rows
         self._num_cards = num_cards
@@ -29,67 +36,30 @@ class SechsNimmtEnv(Env):
         self._scores = np.zeros(self._num_players)
 
     def reset(self):
-        """Resets the state of the environment and returns an initial observation.
-        Returns:
-            observation (object): the initial observation.
-        """
-
+        """ Resets the state of the environment and returns an initial observation. """
         self._deal()
         self._scores = np.zeros(self._num_players)
+        states, done, info = self._create_states()
+        return states
 
     def step(self, action):
-        """Run one timestep of the environment's dynamics. When end of
-        episode is reached, you are responsible for calling `reset()`
-        to reset this environment's state.
-        Accepts an action and returns a tuple (observation, reward, done, info).
-        Args:
-            action (object): an action provided by the agent
-        Returns:
-            observation (object): agent's observation of the current environment
-            reward (float) : amount of reward returned after previous action
-            done (bool): whether the episode has ended, in which case further step() calls will return undefined results
-            info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
-        """
-        raise NotImplementedError
+        """ Environment step. action is actually a list of actions (one for each player). """
+        assert len(action) == self._num_players
+        for player, card in enumerate(action):
+            self._check_move(player, card)
+        rewards = self._play_cards(action)
+        states, done, info = self._create_states()
+        return states, rewards, done, info
 
-    def render(self, mode='human'):
-        """Renders the environment.
-        The set of supported modes varies per environment. (And some
-        environments do not support rendering at all.) By convention,
-        if mode is:
-        - human: render to the current display or terminal and
-          return nothing. Usually for human consumption.
-        - rgb_array: Return an numpy.ndarray with shape (x, y, 3),
-          representing RGB values for an x-by-y pixel image, suitable
-          for turning into a video.
-        - ansi: Return a string (str) or StringIO.StringIO containing a
-          terminal-style text representation. The text can include newlines
-          and ANSI escape sequences (e.g. for colors).
-        Note:
-            Make sure that your class's metadata 'render.modes' key includes
-              the list of supported modes. It's recommended to call super()
-              in implementations to use the functionality of this method.
-        Args:
-            mode (str): the mode to render with
-        Example:
-        class MyEnv(Env):
-            metadata = {'render.modes': ['human', 'rgb_array']}
-            def render(self, mode='human'):
-                if mode == 'rgb_array':
-                    return np.array(...) # return RGB frame suitable for video
-                elif mode == 'human':
-                    ... # pop up a window and render
-                else:
-                    super(MyEnv, self).render(mode=mode) # just raise an exception
-        """
-        raise NotImplementedError
-
-    def close(self):
-        """Override close in your subclass to perform any necessary cleanup.
-        Environments will automatically close() themselves when
-        garbage collected or when the program exits.
-        """
-        pass
+    def render(self, mode="human"):
+        """ Report game progress somehow """
+        logger.info("")
+        for player, (score, hand) in enumerate(self.hands):
+            logger.info(f"Player {player + 1:i}: {score:>3i} Hornochsen, cards " + " ".join([f"{card + 1:>3i}" for card in hand]))
+        logger.info("Game state:")
+        for row, cards in enumerate(self.board):
+            logger.info(f"  [{row + 1:i}]: " + " ".join([f"{card + 1:>3i}" for card in cards]))
+        logger.info("")
 
     def _deal(self):
         """ Deals random cards to all players and initiates the game board """
@@ -101,10 +71,11 @@ class SechsNimmtEnv(Env):
             self._hands[player] = cards[:10]  # pop() does not support multiple indices, does it?
             del cards[:10]
 
-        for row in self._num_rows:
+        for row in range(self._num_rows):
             self._board[row] = [cards.pop()]
 
     def _check_move(self, player, card):
+        """ Check legality of a move and raise an exception otherwise"""
         if card not in self._hands[player]:
             raise InvalidMoveException(f"Player {player + 1} tried to play card {card + 1}, but their hand is {self.hands[player]}")
 
@@ -124,7 +95,7 @@ class SechsNimmtEnv(Env):
     def _find_row(self, card):
         """ Find which row a card has to go in """
         thresholds = [(row, cards[-1]) for row, cards in enumerate(self._board)]
-        thresholds = sorted(thresholds, key=lambda x : x[1])  # Sort by card threshold
+        thresholds = sorted(thresholds, key=lambda x: x[1])  # Sort by card threshold
 
         if card < thresholds[0][1]:
             return self._pick_row_to_replace()
@@ -137,7 +108,7 @@ class SechsNimmtEnv(Env):
     def _pick_row_to_replace(self):
         """ Picks which row should be replaces when a player undercuts the smalles open row """
         # TODO: In the long term this should be up to the agents.
-        row_values = [self._row_values(row) for row in self._board]
+        row_values = [self._row_value(cards) for cards in self._board]
         return np.argmin(row_values)
 
     def _score_row(self, row, player):
@@ -149,17 +120,43 @@ class SechsNimmtEnv(Env):
         rewards[player] -= self._row_value(cards)
         return rewards
 
+    def _create_states(self):
+        done = len(self._hands[0]) > 0
+        states = [self._create_game_state()]
+        for player in range(self._num_players):
+            states.append(self._create_agent_state(player))
+        info = {}
+        return states, done, info
+
     def _create_game_state(self):
         """ Builds game state """
-        raise NotImplementedError
+        board_array = -np.ones((self._num_rows, self._threshold))
+        for row in self.board:
+            for i, card in enumerate(row):
+                board_array[row, i] = card
+
+        if self._include_summaries:
+            cards_per_row = np.array([len(cards) for cards in self._board])
+            highest_per_row = np.array([cards[-1] for cards in self._board])
+            score_per_row = np.array([self._row_value(cards, include_last=True) for cards in self._board])
+            state = np.hstack((cards_per_row, highest_per_row, score_per_row, board_array.flatten()))
+        else:
+            state = np.flatten(board_array)
+
+        return state
 
     def _create_agent_state(self, player):
         """ Builds agent state for a given player """
-        raise NotImplementedError
+        return self._hands[player]
 
-    def _row_value(self, cards):
+    def _row_value(self, cards, include_last=False):
         """ Counts points (Hornochsen) in a row, excluding the last card """
-        return sum([self._card_value(c) for c in cards[:-1]])
+        if include_last:
+            return sum([self._card_value(c) for c in cards])
+        elif len(cards) == 1:
+            return 0
+        else:
+            return sum([self._card_value(c) for c in cards[:-1]])
 
     def _card_value(self, card):
         """ Returns the points (Hornochsen) on a single card """

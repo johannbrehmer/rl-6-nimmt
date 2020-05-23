@@ -6,7 +6,7 @@ from .game import SechsNimmtEnv
 logger = logging.getLogger(__name__)
 
 
-class GameSession():
+class GameSession:
     def __init__(self, *agents, device=torch.device("cpu"), dtype=torch.float):
         """ Initializes a game session, which consists of an arbitrary number of games between the given agents """
 
@@ -42,7 +42,7 @@ class GameSession():
 
             # Learning
             for agent, action, agent_state, next_agent_state, reward, next_reward, agent_info in zip(
-                    self.agents, actions, agent_states, next_agent_states, rewards, next_rewards, agent_infos
+                self.agents, actions, agent_states, next_agent_states, rewards, next_rewards, agent_infos
             ):
                 agent.learn(
                     game_state=game_state,

@@ -2,4 +2,4 @@
 
 conda activate rl
 
-black -l 160 rl-6-nimmt/*.py rl-6-nimmt/agents/*.py rl-6-nimmt/utils/*.py rl-6-nimmt/game/*.py
+black -l 160 rl_6_nimmt/*.py rl_6_nimmt/agents/*.py rl_6_nimmt/utils/*.py
