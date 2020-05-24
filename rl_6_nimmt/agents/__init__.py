@@ -6,7 +6,7 @@ from .dqn import DQNVanilla, DDQNAgent, DuellingDQNAgent, DuellingDDQNAgent, DQN
 from .dqn import DQN_PRBAgent, DDQN_PRBAgent, DuellingDDQN_PRBAgent, D3QN_PRB_NStep
 from .dqn import Noisy_DQN, Noisy_D3QN_PRB_NStep, Noisy_D3QN
 from .actor_critic import MCActorCriticAgent, NStepActorCriticAgent, ACERAgent
-from .policy import ReinforceAgent
+from .policy import MaskedReinforceAgent
 
 
 HUMAN = "human"
@@ -31,7 +31,7 @@ NOISY_D3QN = "noisy_d3qn"
 AGENTS = {
     HUMAN: Human,
     RANDOM_AGENT: DrunkHamster,
-    REINFORCE: ReinforceAgent,
+    REINFORCE: MaskedReinforceAgent,
     AC_MC: MCActorCriticAgent,
     AC_N: NStepActorCriticAgent,
     ACER: ACERAgent,

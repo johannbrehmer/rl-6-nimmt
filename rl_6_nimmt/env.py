@@ -79,7 +79,8 @@ class SechsNimmtEnv(Env):
             )
         if self._is_done():
             winning_player = np.argmin(self._scores)
-            logger.info(f"The game is over! Player {winning_player + 1} wins. Congratulations!")
+            losing_player = np.argmax(self._scores)
+            logger.info(f"The game is over! {self._player_name(winning_player)} wins, {self._player_name(losing_player)} loses. Congratulations!")
         logger.info("-" * 80)
 
     def _deal(self):

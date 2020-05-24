@@ -17,14 +17,7 @@ class GameSession:
         self.results = []  # List of total scores (negative Hornochsen) for each game
         self.game = 0
 
-        if self.env._player_names is None:
-            names = []
-            for agent in self.agents:
-                try:
-                    names.append(agent.__name__)
-                except:
-                    names.append(type(agent).__name__)
-            self.env._player_names = names
+        self._set_env_player_names()
 
     def play_game(self, render=False):
         """ Play one game, i.e. until one player hits 66 Hornochsen or whatever it is """
@@ -41,11 +34,13 @@ class GameSession:
 
         while not done:
             # Agent turns
+            state_tensor = torch.tensor(game_state).to(self.device, self.dtype)
             actions, agent_infos = [], []
             for agent, agent_state in zip(self.agents, agent_states):
-                action, agent_info = agent(game_state, legal_actions=agent_state)
-                actions.append(action)
+                action, agent_info = agent(state_tensor, legal_actions=agent_state)
+                actions.append(int(action))
                 agent_infos.append(agent_info)
+            # TODO: gently enforce legality of actions by giving a negative reward and asking again
 
             # Environment steps
             states, next_rewards, done, info = self.env.step(actions)
@@ -60,15 +55,16 @@ class GameSession:
                 self.agents, actions, agent_states, next_agent_states, rewards, next_rewards, agent_infos
             ):
                 agent.learn(
-                    game_state=game_state,
-                    agent_state=agent_state,
+                    state=game_state,
+                    legal_actions=agent_state,
                     reward=reward,
                     action=action,
                     done=done,
-                    next_game_state=next_game_state,
-                    next_agent_state=next_agent_state,
+                    next_state=next_game_state,
+                    next_legal_actions=next_agent_state,
                     next_reward=next_reward,
                     num_episode=self.game,
+                    episode_end=done,
                     **agent_info,
                 )
 
@@ -79,3 +75,12 @@ class GameSession:
 
         self.results.append(scores)
         self.game += 1
+
+    def _set_env_player_names(self):
+        names = []
+        for agent in self.agents:
+            try:
+                names.append(agent.__name__)
+            except:
+                names.append(type(agent).__name__)
+        self.env._player_names = names
