@@ -7,14 +7,13 @@ logger = logging.getLogger(__name__)
 class Human(Agent):
     """ Agent that makes totally random decisions """
 
-    def __init__(self, env, name, *args, **kwargs):
+    def __init__(self, name="Human", env=None, *args, **kwargs):
         super().__init__(env, *args, **kwargs)
-        self._player_name = name
         self.__name__ = name  # This is a terrible idea
 
     def forward(self, state, legal_actions, **kwargs):
         prompt = (
-            f"It is your turn, {self._player_name}! \n You have the following cards: "
+            f"It is your turn, {self.__name__}! You have the following cards: "
             + " ".join([f"{card + 1:>3d}" for card in legal_actions])
             + ". Choose one to play!"
         )

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MaskedReinforceAgent(Agent):
     def __init__(
         self,
-        env,
+        env=None,
         gamma=0.99,
         optim_kwargs=None,
         history_length=None,
@@ -107,7 +107,7 @@ class MaskedReinforceAgent(Agent):
 class BatchedReinforceAgent(Agent):
     def __init__(
         self,
-        env,
+        env=None,
         gamma=0.99,
         optim_kwargs=None,
         history_length=None,

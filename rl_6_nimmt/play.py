@@ -1,19 +1,20 @@
 import torch
 import numpy as np
 import logging
+from .env import SechsNimmtEnv
 
 logger = logging.getLogger(__name__)
 
 
 class GameSession:
-    def __init__(self, env, *agents, device=torch.device("cpu"), dtype=torch.float):
+    def __init__(self, *agents, device=torch.device("cpu"), dtype=torch.float):
         """ Initializes a game session, which consists of an arbitrary number of games between the given agents """
 
         self.device = device
         self.dtype = dtype
         self.agents = [agent.to(self.device, self.dtype) for agent in agents]
         self.num_agents = len(agents)
-        self.env = env
+        self.env = SechsNimmtEnv(self.num_agents)
         self.results = []  # List of total scores (negative Hornochsen) for each game
         self.game = 0
 

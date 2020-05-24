@@ -5,15 +5,13 @@ from .human import Human
 from .dqn import DQNVanilla, DDQNAgent, DuellingDQNAgent, DuellingDDQNAgent, DQN_NStep_Agent
 from .dqn import DQN_PRBAgent, DDQN_PRBAgent, DuellingDDQN_PRBAgent, D3QN_PRB_NStep
 from .dqn import Noisy_DQN, Noisy_D3QN_PRB_NStep, Noisy_D3QN
-from .actor_critic import MCActorCriticAgent, NStepActorCriticAgent, ACERAgent
+from .actor_critic import BatchedACERAgent
 from .policy import MaskedReinforceAgent, BatchedReinforceAgent
 
 
 HUMAN = "human"
 RANDOM_AGENT = "random"
 REINFORCE = "reinforce"
-AC_N = "ac-n"
-AC_MC = "ac-mc"
 ACER = "acer"
 DQN = "dqn"
 DDQN = "ddqn"
@@ -31,10 +29,8 @@ NOISY_D3QN = "noisy_d3qn"
 AGENTS = {
     HUMAN: Human,
     RANDOM_AGENT: DrunkHamster,
-    REINFORCE: MaskedReinforceAgent,
-    AC_MC: MCActorCriticAgent,
-    AC_N: NStepActorCriticAgent,
-    ACER: ACERAgent,
+    REINFORCE: BatchedReinforceAgent,
+    ACER: BatchedACERAgent,
     DQN: DQNVanilla,
     DDQN: DDQNAgent,
     DUELLING_DQN: DuellingDQNAgent,
@@ -49,7 +45,7 @@ AGENTS = {
     NOISY_D3QN: Noisy_D3QN,
 }
 
-POLICY_METHODS = [REINFORCE, AC_MC, AC_N, ACER]
+POLICY_METHODS = [REINFORCE, ACER]
 DDQN_METHODS = [DDQN, DUELLING_DDQN, DDQN_PRB, DUELLING_DDQN_PRB, NOISY_D_QN_PRB_NSTEP, NOISY_D3QN, D3QN_PRB_NSTEP]
 NSTEP_METHODS = [DQN_NSTEP, D3QN_PRB_NSTEP, NOISY_D_QN_PRB_NSTEP]
-NOISY_METHODS = [NOISY_DQN, NOISY_D_QN_PRB_NSTEP, NOISY_D3QN, AC_N]
+NOISY_METHODS = [NOISY_DQN, NOISY_D_QN_PRB_NSTEP, NOISY_D3QN]

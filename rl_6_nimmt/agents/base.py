@@ -1,23 +1,25 @@
 import torch
 from torch import nn
 from ..utils.replay_buffer import History
+from ..env import SechsNimmtEnv
 
 
 class Agent(nn.Module):
     """ Abstract base agent class """
 
-    def __init__(self, env, gamma=0.99, optim_kwargs=None, history_length=None, dtype=torch.float, device=torch.device("cpu")):
+    def __init__(self, env=None, gamma=0.99, optim_kwargs=None, history_length=None, dtype=torch.float, device=torch.device("cpu")):
+        if env is None:
+            env = SechsNimmtEnv(num_players=4)
 
         self.gamma = gamma
         self.device = device
         self.dtype = dtype
         self.action_space = env.action_space
-        self.num_actions = self.action_space.n
         self.state_length = env.observation_space.shape[0]
+        self.num_actions = self.action_space.n
         self._init_replay_buffer(history_length)
         self.optimizer = None
         self.optim_kwargs = optim_kwargs
-        self.gamma = gamma
 
         super().__init__()
 
