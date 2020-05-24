@@ -6,7 +6,7 @@ from .dqn import DQNVanilla, DDQNAgent, DuellingDQNAgent, DuellingDDQNAgent, DQN
 from .dqn import DQN_PRBAgent, DDQN_PRBAgent, DuellingDDQN_PRBAgent, D3QN_PRB_NStep
 from .dqn import Noisy_DQN, Noisy_D3QN_PRB_NStep, Noisy_D3QN
 from .actor_critic import MCActorCriticAgent, NStepActorCriticAgent, ACERAgent
-from .policy import MaskedReinforceAgent
+from .policy import MaskedReinforceAgent, BatchedReinforceAgent
 
 
 HUMAN = "human"
