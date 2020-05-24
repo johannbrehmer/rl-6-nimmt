@@ -6,7 +6,7 @@ from ..utils.replay_buffer import History
 class Agent(nn.Module):
     """ Abstract base agent class """
 
-    def __init__(self, env, gamma, optim_kwargs=None, history_length=None, dtype=torch.float, device=torch.device("cpu")):
+    def __init__(self, env, gamma=0.99, optim_kwargs=None, history_length=None, dtype=torch.float, device=torch.device("cpu")):
 
         self.gamma = gamma
         self.device = device
@@ -30,7 +30,7 @@ class Agent(nn.Module):
             optim_kwargs = {} if self.optim_kwargs is None else self.optim_kwargs
             self.optimizer = torch.optim.Adam(params=self.parameters(), **optim_kwargs)
 
-    def forward(self, state, *args, **kwargs):
+    def forward(self, state, legal_actions, *args, **kwargs):
         """
         Given an environment state, pick the next action and return it.
 
@@ -38,6 +38,9 @@ class Agent(nn.Module):
         ----------
         state : Tensor
             Observed state s_t.
+
+        legal_actions : list of int
+            Available actions
 
         Returns
         -------

@@ -1,37 +1,49 @@
 import torch
 import numpy as np
 import logging
-from .env import SechsNimmtEnv
 
 logger = logging.getLogger(__name__)
 
 
 class GameSession:
-    def __init__(self, *agents, device=torch.device("cpu"), dtype=torch.float):
+    def __init__(self, env, *agents, device=torch.device("cpu"), dtype=torch.float):
         """ Initializes a game session, which consists of an arbitrary number of games between the given agents """
 
         self.device = device
         self.dtype = dtype
         self.agents = [agent.to(self.device, self.dtype) for agent in agents]
         self.num_agents = len(agents)
-        self.env = SechsNimmtEnv()
-
-        self.game = 0  # Current game id (= number of finished games)
-        self.round = 0  # Round id in current game (= number of finished rounds), where a round means playing through one full stack of cards
-
+        self.env = env
         self.results = []  # List of total scores (negative Hornochsen) for each game
+        self.game = 0
 
-    def play_game(self):
+        if self.env._player_names is None:
+            names = []
+            for agent in self.agents:
+                try:
+                    names.append(agent.__name__)
+                except:
+                    names.append(type(agent).__name__)
+            self.env._player_names = names
+
+    def play_game(self, render=False):
         """ Play one game, i.e. until one player hits 66 Hornochsen or whatever it is """
 
-        game_state, agent_states, rewards, done = self.env.reset()
+        states = self.env.reset()
+        game_state = states[0]
+        agent_states = states[1:]
+        done = False
+        rewards = np.zeros(self.num_agents, dtype=np.int)
         scores = np.zeros(self.num_agents, dtype=np.int)
+
+        if render:
+            self.env.render()
 
         while not done:
             # Agent turns
             actions, agent_infos = [], []
             for agent, agent_state in zip(self.agents, agent_states):
-                action, agent_info = agent(game_state, agent_state)
+                action, agent_info = agent(game_state, legal_actions=agent_state)
                 actions.append(action)
                 agent_infos.append(agent_info)
 
@@ -39,6 +51,9 @@ class GameSession:
             states, next_rewards, done, info = self.env.step(actions)
             next_game_state = states[0]
             next_agent_states = states[1:]
+
+            if render:
+                self.env.render()
 
             # Learning
             for agent, action, agent_state, next_agent_state, reward, next_reward, agent_info in zip(
@@ -63,3 +78,4 @@ class GameSession:
             rewards = next_rewards
 
         self.results.append(scores)
+        self.game += 1
