@@ -55,7 +55,7 @@ class Agent(nn.Module):
         """
         raise NotImplementedError
 
-    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, *args, **kwargs):
+    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
         """
         Is called at the end of each step, gives the agent the chance to a) update the replay buffer and b) learn its weights.
         """

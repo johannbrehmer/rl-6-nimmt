@@ -40,7 +40,7 @@ class Tournament:
     def play_game(self, num_players=None):
         if num_players is None:
             num_players = np.random.choice(list(range(self.min_players, self.max_players + 1)), size=1)[0]
-        assert len(self) > num_players
+        assert len(self) >= num_players
 
         agent_idx = np.random.choice(len(self.agents.keys()), size=num_players, replace=False)
         agent_names = list(self.agents.keys())
@@ -73,6 +73,17 @@ class Tournament:
         self.baseline_scores[agent_name].append(scores[0])
         self.baseline_positions[agent_name].append(relative_positions[0])
 
+    def winner(self):
+        best = -float("inf")
+        winner = None
+
+        for agent_name, agent in self.agents.items():
+            if np.mean(self.tournament_positions[agent_name]) > best:
+                best = np.mean(self.tournament_positions[agent_name])
+                winner = agent
+
+        return winner
+
     def __str__(self):
         lines = [f"Tournament after {self.total_games} games:"]
         lines.append("--------------------------------------------------------------------------------------------------")
@@ -93,7 +104,9 @@ class Tournament:
     @staticmethod
     def _compute_relative_positions(scores):
         epsilon = 0.5
-        positions = np.array([np.searchsorted(sorted(scores), score + epsilon) for score in scores], dtype=np.float)
+        positions_l = np.array([np.searchsorted(sorted(scores), score + epsilon) for score in scores], dtype=np.float)
+        positions_r = 1. + np.array([np.searchsorted(sorted(scores), score - epsilon) for score in scores], dtype=np.float)
+        positions = 0.5 * (positions_l + positions_r)
         return (positions - 1) / (len(scores) - 1)
 
     def __repr__(self):

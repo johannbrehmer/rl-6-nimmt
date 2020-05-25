@@ -61,12 +61,12 @@ def timeit(method):
     return timed
 
 
-def iter_flatten(iterable):
+def iter_flatten(iterable, max_depth=None):
     """ From http://rightfootin.blogspot.com/2006/09/more-on-python-flatten.html """
     it = iter(iterable)
     for e in it:
-        if isinstance(e, (list, tuple, np.ndarray)):
-            for f in iter_flatten(e):
+        if isinstance(e, (list, tuple, np.ndarray)) and (max_depth is None or max_depth > 0):
+            for f in iter_flatten(e, None if max_depth is None else max_depth - 1):
                 yield f
         else:
             yield e

@@ -24,8 +24,8 @@ class GameSession:
         """ Play one game, i.e. until one player hits 66 Hornochsen or whatever it is """
 
         states = self.env.reset()
-        game_state = states[0]
-        agent_states = states[1:]
+        game_state = states[0].copy()
+        agent_states = [state.copy() for state in states[1:]]
         done = False
         rewards = np.zeros(self.num_agents, dtype=np.int)
         scores = np.zeros(self.num_agents, dtype=np.int)
@@ -45,8 +45,8 @@ class GameSession:
 
             # Environment steps
             states, next_rewards, done, info = self.env.step(actions)
-            next_game_state = states[0]
-            next_agent_states = states[1:]
+            next_game_state = states[0].copy()
+            next_agent_states = [state.copy() for state in states[1:]]
 
             if render:
                 self.env.render()
@@ -56,12 +56,12 @@ class GameSession:
                 self.agents, actions, agent_states, next_agent_states, rewards, next_rewards, agent_infos
             ):
                 agent.learn(
-                    state=game_state,
+                    state=state_tensor,
                     legal_actions=agent_state,
                     reward=reward,
                     action=action,
                     done=done,
-                    next_state=next_game_state,
+                    next_state=torch.tensor(next_game_state).to(self.device, self.dtype),
                     next_legal_actions=next_agent_state,
                     next_reward=next_reward,
                     num_episode=self.game,

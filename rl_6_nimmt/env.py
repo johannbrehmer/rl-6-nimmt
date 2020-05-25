@@ -69,13 +69,13 @@ class SechsNimmtEnv(Env):
         logger.info("-" * 80)
         logger.info("Board:")
         for row, cards in enumerate(self._board):
-            logger.info(f"  " + " ".join([f"{card + 1:>3d}" for card in cards]) + "   _" * (self._threshold - len(cards) - 1) + "   *")
+            logger.info(f"  " + " ".join([self._format_card(card) for card in cards]) + "   _ " * (self._threshold - len(cards) - 1) + "   * ")
         logger.info("Players:")
         for player, (score, hand) in enumerate(zip(self._scores, self._hands)):
             self._player_name(player)
             logger.info(
                 f"  {self._player_name(player)}: {score:>3d} Hornochsen, "
-                + ("no cards " if len(hand) == 0 else "cards " + " ".join([f"{card + 1:>3d}" for card in hand]))
+                + ("no cards " if len(hand) == 0 else "cards " + " ".join([self._format_card(card) for card in hand]))
             )
         if self._is_done():
             winning_player = np.argmin(self._scores)
@@ -141,7 +141,7 @@ class SechsNimmtEnv(Env):
     def _pick_row_to_replace(self):
         """ Picks which row should be replaces when a player undercuts the smalles open row """
         # TODO: In the long term this should be up to the agents.
-        row_values = [self._row_value(cards) for cards in self._board]
+        row_values = [self._row_value(cards, include_last=True) for cards in self._board]
 
         return np.argmin(row_values)
 
@@ -200,7 +200,8 @@ class SechsNimmtEnv(Env):
         else:
             return sum([self._card_value(c) for c in cards[:-1]])
 
-    def _card_value(self, card):
+    @staticmethod
+    def _card_value(card):
         """ Returns the points (Hornochsen) on a single card """
 
         assert 0 <= card < 104
@@ -215,6 +216,12 @@ class SechsNimmtEnv(Env):
             return 2
         else:
             return 1
+
+    def _format_card(self, card):
+        signs = {1: " ", 2:".", 3:":", 5:"+", 7:"#"}
+        value = self._card_value(card)
+        return f"{card + 1:>3d}{signs[value]}"
+
 
     def _is_done(self):
         """ Returns whether the game is over """
