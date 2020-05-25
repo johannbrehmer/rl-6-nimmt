@@ -96,7 +96,7 @@ class BatchedActionValueActorCriticAgent(Agent):
         return log_probs, qs
 
     def _act(self, log_probs, legal_actions):
-        cat = Categorical(torch.exp(log_probs))
+        cat = Categorical(torch.exp(torch.clamp(log_probs, -20)))
         action_id = len(legal_actions)
         while action_id >= len(legal_actions):
             action_id = cat.sample()
@@ -116,7 +116,7 @@ class BatchedActionValueActorCriticAgent(Agent):
 class BatchedACERAgent(BatchedActionValueActorCriticAgent):
     """ Based on https://github.com/seungeunrho/minimalRL/blob/master/acer.py """
 
-    def __init__(self, *args, rollout_len=5, minibatch=10, truncate=1.0, warmup=100, r_factor=0.1, actor_weight=1.0, critic_weight=1.0, **kwargs):
+    def __init__(self, *args, rollout_len=10, minibatch=5, truncate=1.0, warmup=100, r_factor=0.1, actor_weight=1.0, critic_weight=1.0, **kwargs):
         self.truncate = truncate
         self.warmup = warmup
         self.batchsize = minibatch

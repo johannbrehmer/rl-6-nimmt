@@ -66,7 +66,7 @@ class SechsNimmtEnv(Env):
     def render(self, mode="human"):
         """ Report game progress somehow """
 
-        logger.info("-" * 80)
+        logger.info("-" * 120)
         logger.info("Board:")
         for row, cards in enumerate(self._board):
             logger.info(f"  " + " ".join([self._format_card(card) for card in cards]) + "   _ " * (self._threshold - len(cards) - 1) + "   * ")
@@ -81,7 +81,7 @@ class SechsNimmtEnv(Env):
             winning_player = np.argmin(self._scores)
             losing_player = np.argmax(self._scores)
             logger.info(f"The game is over! {self._player_name(winning_player)} wins, {self._player_name(losing_player)} loses. Congratulations!")
-        logger.info("-" * 80)
+        logger.info("-" * 120)
 
     def _deal(self):
         """ Deals random cards to all players and initiates the game board """

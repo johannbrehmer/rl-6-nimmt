@@ -8,22 +8,24 @@ from .play import GameSession
 
 
 class Tournament:
-    def __init__(self, min_players=2, max_players=4, baseline_agents=None, baseline_num_games=100, baseline_condition=1000):
+    def __init__(self, min_players=2, max_players=4, baseline_agents=None, baseline_num_games=1, baseline_condition=10):
         assert 0 < min_players <= max_players
 
-        self.min_players = 2
-        self.max_players = 4
+        self.min_players = min_players
+        self.max_players = max_players
         self.baseline_agents = baseline_agents
         self.baseline_num_games = baseline_num_games
         self.baseline_condition = baseline_condition
 
         self.total_games = 0
         self.agents = dict()
+        self.played_games = dict()
         self.tournament_scores = dict()
         self.tournament_positions = dict()
+        self.tournament_wins = dict()
         self.baseline_scores = dict()
         self.baseline_positions = dict()
-        self.played_games = dict()
+        self.baseline_wins = dict()
 
     def add_player(self, name, agent):
         assert name not in self.agents.keys()
@@ -34,8 +36,10 @@ class Tournament:
         self.played_games[name] = 0
         self.tournament_scores[name] = []
         self.tournament_positions[name] = []
+        self.tournament_wins[name] = []
         self.baseline_scores[name] = []
         self.baseline_positions[name] = []
+        self.baseline_wins[name] = []
 
     def play_game(self, num_players=None):
         if num_players is None:
@@ -51,12 +55,15 @@ class Tournament:
         session.play_game(render=False)
         scores = session.results[0]
         relative_positions = self._compute_relative_positions(scores)
+        winner = agent_names[np.argmax(scores)]
 
         self.total_games += 1
         for agent_name, score, rel_pos in zip(agent_names, scores, relative_positions):
             self.played_games[agent_name] += 1
             self.tournament_scores[agent_name].append(score)
             self.tournament_positions[agent_name].append(rel_pos)
+            self.tournament_wins[agent_name].append(1. if winner == agent_name else 0.)
+
             if self.played_games[agent_name] % self.baseline_condition == 0:
                 self.baseline_eval(agent_name)
 
@@ -69,9 +76,11 @@ class Tournament:
             session.play_game(render=False)
         scores = np.mean(np.array(session.results), axis=0)
         relative_positions = self._compute_relative_positions(scores)
+        winner = float(np.argmax(scores) == 0)
 
         self.baseline_scores[agent_name].append(scores[0])
         self.baseline_positions[agent_name].append(relative_positions[0])
+        self.baseline_wins[agent_name].append(winner)
 
     def winner(self):
         best = -float("inf")
@@ -86,18 +95,18 @@ class Tournament:
 
     def __str__(self):
         lines = [f"Tournament after {self.total_games} games:"]
-        lines.append("--------------------------------------------------------------------------------------------------")
-        lines.append(" Agent                | Games | Tournament score | Tournament pos | Baseline score | Baseline pos ")
-        lines.append("--------------------------------------------------------------------------------------------------")
+        lines.append("----------------------------------------------------------------------------------------------------")
+        lines.append(" Agent                | Games | Tournament score | Tournament wins | Baseline score | Baseline wins ")
+        lines.append("----------------------------------------------------------------------------------------------------")
 
         for name in self.agents.keys():
             t_score = "-" if not self.tournament_scores[name] else f"{np.mean(self.tournament_scores[name]):>5.2f}"
-            t_pos = "-" if not self.tournament_positions[name] else f"{np.mean(self.tournament_positions[name]):>5.2f}"
+            t_pos = "-" if not self.tournament_wins[name] else f"{np.mean(self.tournament_wins[name]):>5.2f}"
             b_score = "-" if not self.baseline_scores[name] else f"{np.mean(self.baseline_scores[name]):>5.2f}"
-            b_pos = "-" if not self.baseline_positions[name] else f"{np.mean(self.baseline_positions[name]):>5.2f}"
-            lines.append(f" {name:>20s} | {self.played_games[name]:>5} | {t_score:>16} | {t_pos:>14} | {b_score:>14} | {b_pos:>12} ")
+            b_pos = "-" if not self.baseline_wins[name] else f"{np.mean(self.baseline_wins[name]):>5.2f}"
+            lines.append(f" {name:>20s} | {self.played_games[name]:>5} | {t_score:>16} | {t_pos:>15} | {b_score:>14} | {b_pos:>13} ")
 
-        lines.append("--------------------------------------------------------------------------------------------------")
+        lines.append("----------------------------------------------------------------------------------------------------")
 
         return "\n".join(lines)
 

@@ -112,6 +112,10 @@ venv.bak/
 # PyCharm
 .idea
 
+# Hidden files
+.*
+!.gitignore
+
 # Data
 log/
 data/
