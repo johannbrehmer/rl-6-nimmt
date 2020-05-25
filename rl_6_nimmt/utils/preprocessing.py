@@ -20,27 +20,31 @@ class SechsNimmtStateNormalization(nn.Module):
 
         # Action
         if self.action:
-            outputs.append(self._normalize(input[:, pos:pos+1], min_=0, max_=self.cards - 1))
+            outputs.append(self._normalize(input[:, pos : pos + 1], min_=0, max_=self.cards - 1))
             pos += 1
 
+        # Own hand
+        outputs.append(self._normalize(input[:, pos : pos + 10], min_=0, max_=self.cards - 1))
+        pos += 10
+
         # Number of players
-        outputs.append(self._normalize(input[:, pos:pos+1], min_=0, max_=6))
+        outputs.append(self._normalize(input[:, pos : pos + 1], min_=0, max_=6))
         pos += 1
 
         # Cards per row
-        outputs.append(self._normalize(input[:, pos:pos+self.rows], min_=1, max_=5))
+        outputs.append(self._normalize(input[:, pos : pos + self.rows], min_=1, max_=5))
         pos += self.rows
 
         # Highest card per row
-        outputs.append( self._normalize(input[:, pos:pos+self.rows], min_=0, max_=self.cards - 1))
+        outputs.append(self._normalize(input[:, pos : pos + self.rows], min_=0, max_=self.cards - 1))
         pos += self.rows
 
         # Score per row
-        outputs.append(self._normalize(input[:, pos:pos+self.rows], min_=1, max_=10))
+        outputs.append(self._normalize(input[:, pos : pos + self.rows], min_=1, max_=10))
         pos += self.rows
 
         # Raw game state
-        outputs.append(self._normalize(input[:, pos:], min_=-1, max_=self.cards - 1))
+        outputs.append(self._normalize(input[:, pos:], min_=0, max_=self.cards - 1))
 
         outputs = torch.cat(outputs, axis=1)
         if flatten:
@@ -48,7 +52,6 @@ class SechsNimmtStateNormalization(nn.Module):
 
         return outputs
 
-
     @staticmethod
-    def _normalize(input, min_, max_, out_min=-1., out_max=1.):
+    def _normalize(input, min_, max_, out_min=-1.0, out_max=1.0):
         return out_min + (out_max - out_min) * (input - min_) / (max_ - min_)

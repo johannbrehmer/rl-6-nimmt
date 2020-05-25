@@ -37,7 +37,9 @@ class MaskedReinforceAgent(Agent):
 
         # NN that calculates the policy (actor) and estimates Q (critic)
         self.preprocessor = SechsNimmtStateNormalization(action=False)
-        self.actor = MultiHeadedMLP(self.state_length, hidden_sizes=hidden_sizes, head_sizes=(self.num_actions,), activation=activation, head_activations=(None,))
+        self.actor = MultiHeadedMLP(
+            self.state_length, hidden_sizes=hidden_sizes, head_sizes=(self.num_actions,), activation=activation, head_activations=(None,)
+        )
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, state, legal_actions, **kwargs):

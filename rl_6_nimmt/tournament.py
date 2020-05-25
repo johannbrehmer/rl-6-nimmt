@@ -105,7 +105,7 @@ class Tournament:
     def _compute_relative_positions(scores):
         epsilon = 0.5
         positions_l = np.array([np.searchsorted(sorted(scores), score + epsilon) for score in scores], dtype=np.float)
-        positions_r = 1. + np.array([np.searchsorted(sorted(scores), score - epsilon) for score in scores], dtype=np.float)
+        positions_r = 1.0 + np.array([np.searchsorted(sorted(scores), score - epsilon) for score in scores], dtype=np.float)
         positions = 0.5 * (positions_l + positions_r)
         return (positions - 1) / (len(scores) - 1)
 

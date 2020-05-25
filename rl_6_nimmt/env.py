@@ -34,7 +34,7 @@ class SechsNimmtEnv(Env):
         self.action_space = Discrete(self._num_cards)
         self.reward_range = (-float("inf"), 0)
         self.metadata = {"render.modes": ["human"]}
-        state_shape = (1 + int(self._include_summaries)*3*self._num_rows + self._num_rows * self._threshold,)
+        state_shape = (10 + 1 + int(self._include_summaries) * 3 * self._num_rows + self._num_rows * self._threshold,)
         self.observation_space = Box(low=-1.0, high=2.0, shape=state_shape, dtype=np.float)
         self.spec = None
 
@@ -58,8 +58,8 @@ class SechsNimmtEnv(Env):
         rewards = self._play_cards(action)
 
         states = self._create_states()
+        info = dict()
         done = self._is_done()
-        info = {}
 
         return states, rewards, done, info
 
@@ -161,11 +161,16 @@ class SechsNimmtEnv(Env):
     def _create_states(self):
         """ Creates state tuple """
 
-        states = [self._create_game_state()]
-        for player in range(self._num_players):
-            states.append(self._create_agent_state(player))
+        game_state = self._create_game_state()
+        player_states = []
+        legal_actions = []
 
-        return states
+        for player in range(self._num_players):
+            player_state, legal_action = self._create_agent_state(player)
+            player_states.append(np.hstack((player_state, game_state)))
+            legal_actions.append(legal_action)
+
+        return player_states, legal_actions
 
     def _create_game_state(self):
         """ Builds game state """
@@ -188,7 +193,10 @@ class SechsNimmtEnv(Env):
     def _create_agent_state(self, player):
         """ Builds agent state for a given player """
 
-        return self._hands[player]
+        legal_actions = self._hands[player].copy()
+        player_state = np.array(self._hands[player] + [-1 for _ in range(10 - len(legal_actions))], dtype=np.int)
+
+        return player_state, legal_actions
 
     def _row_value(self, cards, include_last=False):
         """ Counts points (Hornochsen) in a row, excluding the last card """
@@ -218,10 +226,9 @@ class SechsNimmtEnv(Env):
             return 1
 
     def _format_card(self, card):
-        signs = {1: " ", 2:".", 3:":", 5:"+", 7:"#"}
+        signs = {1: " ", 2: ".", 3: ":", 5: "+", 7: "#"}
         value = self._card_value(card)
         return f"{card + 1:>3d}{signs[value]}"
-
 
     def _is_done(self):
         """ Returns whether the game is over """

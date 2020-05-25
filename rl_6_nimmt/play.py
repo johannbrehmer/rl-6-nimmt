@@ -23,9 +23,8 @@ class GameSession:
     def play_game(self, render=False):
         """ Play one game, i.e. until one player hits 66 Hornochsen or whatever it is """
 
-        states = self.env.reset()
-        game_state = states[0].copy()
-        agent_states = [state.copy() for state in states[1:]]
+        states, all_legal_actions = self.env.reset()
+        states = self._tensorize(states)
         done = False
         rewards = np.zeros(self.num_agents, dtype=np.int)
         scores = np.zeros(self.num_agents, dtype=np.int)
@@ -35,34 +34,32 @@ class GameSession:
 
         while not done:
             # Agent turns
-            state_tensor = torch.tensor(game_state).to(self.device, self.dtype)
             actions, agent_infos = [], []
-            for agent, agent_state in zip(self.agents, agent_states):
-                action, agent_info = agent(state_tensor, legal_actions=agent_state)
+            for agent, state, legal_actions in zip(self.agents, states, all_legal_actions):
+                action, agent_info = agent(state, legal_actions=legal_actions)
                 actions.append(int(action))
                 agent_infos.append(agent_info)
             # TODO: gently enforce legality of actions by giving a negative reward and asking again
 
             # Environment steps
-            states, next_rewards, done, info = self.env.step(actions)
-            next_game_state = states[0].copy()
-            next_agent_states = [state.copy() for state in states[1:]]
+            (next_states, next_all_legal_actions), next_rewards, done, info = self.env.step(actions)
+            next_states = self._tensorize(next_states)
 
             if render:
                 self.env.render()
 
             # Learning
-            for agent, action, agent_state, next_agent_state, reward, next_reward, agent_info in zip(
-                self.agents, actions, agent_states, next_agent_states, rewards, next_rewards, agent_infos
+            for agent, action, state, next_state, reward, next_reward, agent_info, legal_actions, next_legal_actions, in zip(
+                self.agents, actions, states, next_states, rewards, next_rewards, agent_infos, all_legal_actions, next_all_legal_actions
             ):
                 agent.learn(
-                    state=state_tensor,
-                    legal_actions=agent_state,
+                    state=state,
+                    legal_actions=legal_actions.copy(),
                     reward=reward,
                     action=action,
                     done=done,
-                    next_state=torch.tensor(next_game_state).to(self.device, self.dtype),
-                    next_legal_actions=next_agent_state,
+                    next_state=next_state,
+                    next_legal_actions=next_legal_actions.copy(),
                     next_reward=next_reward,
                     num_episode=self.game,
                     episode_end=done,
@@ -70,12 +67,15 @@ class GameSession:
                 )
 
             scores += np.array(next_rewards)
-            game_state = next_game_state
-            agent_states = next_agent_states
+            states = next_states
+            all_legal_actions = next_all_legal_actions
             rewards = next_rewards
 
         self.results.append(scores)
         self.game += 1
+
+    def _tensorize(self, inputs):
+        return [torch.tensor(input).to(self.device, self.dtype) for input in inputs]
 
     def _set_env_player_names(self):
         names = []

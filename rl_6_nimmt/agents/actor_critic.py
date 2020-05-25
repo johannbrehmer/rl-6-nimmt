@@ -42,11 +42,7 @@ class BatchedActionValueActorCriticAgent(Agent):
 
         self.preprocessor = SechsNimmtStateNormalization(action=True)
         self.actor_critic = MultiHeadedMLP(
-            1 + self.state_length,
-            hidden_sizes=hidden_sizes,
-            head_sizes=(1, 1),
-            activation=activation,
-            head_activations=(None, None),
+            1 + self.state_length, hidden_sizes=hidden_sizes, head_sizes=(1, 1), activation=activation, head_activations=(None, None),
         )
         self.softmax = nn.Softmax(dim=0)
 
@@ -55,7 +51,10 @@ class BatchedActionValueActorCriticAgent(Agent):
         log_probs, qs = self._evaluate(batch_states)
         action_id = self._act(log_probs, legal_actions)
 
-        return legal_actions[action_id], {"action_id": action_id, "log_probs": log_probs, "log_prob": log_probs[action_id], "values": qs, "value": qs[action_id]}
+        return (
+            legal_actions[action_id],
+            {"action_id": action_id, "log_probs": log_probs, "log_prob": log_probs[action_id], "values": qs, "value": qs[action_id]},
+        )
 
     def evaluate(self, states, legal_actions_list):
         all_qs = []
@@ -91,7 +90,7 @@ class BatchedActionValueActorCriticAgent(Agent):
         log_probs = torch.log(probs)
 
         if pad:
-            qs = self._pad(qs, value=0.)
+            qs = self._pad(qs, value=0.0)
             log_probs = self._pad(log_probs)
 
         return log_probs, qs
@@ -104,7 +103,9 @@ class BatchedActionValueActorCriticAgent(Agent):
         return action_id
 
     def _pad(self, inputs, value=None):
-        return torch.nn.functional.pad(inputs, (0, self.max_num_actions - inputs.size()[-1]), mode='constant', value=self.log_epsilon if value is None else value)
+        return torch.nn.functional.pad(
+            inputs, (0, self.max_num_actions - inputs.size()[-1]), mode="constant", value=self.log_epsilon if value is None else value
+        )
 
     def _gradient_step(self, loss):
         self.optimizer.zero_grad()
@@ -130,10 +131,15 @@ class BatchedACERAgent(BatchedActionValueActorCriticAgent):
         self.history = SequentialHistory(max_length=history_length, dtype=self.dtype, device=self.device)
 
     def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
-        # Memorize step
-        self.history.store(state=state, legal_actions=legal_actions, log_probs=kwargs["log_probs"], action_id=kwargs["action_id"], next_reward=next_reward * self.r_factor, done=done)
+        self.history.store(
+            state=state,
+            legal_actions=legal_actions,
+            log_probs=kwargs["log_probs"],
+            action_id=kwargs["action_id"],
+            next_reward=next_reward * self.r_factor,
+            done=done,
+        )
 
-        # Every self.rollout_len transitions, we train
         if self.history.current_sequence_length() >= self.rollout_len or done or episode_end:
             self.history.flush()
 
