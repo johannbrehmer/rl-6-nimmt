@@ -28,7 +28,7 @@ class BatchedActionValueActorCriticAgent(Agent):
         history_length=None,
         dtype=torch.float,
         device=torch.device("cpu"),
-        hidden_sizes=(100,),
+        hidden_sizes=(100, 100,),
         activation=nn.ReLU(),
         max_num_actions=10,
         log_epsilon=-20.0,

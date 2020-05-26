@@ -62,7 +62,7 @@ class Tournament:
             self.played_games[agent_name] += 1
             self.tournament_scores[agent_name].append(score)
             self.tournament_positions[agent_name].append(rel_pos)
-            self.tournament_wins[agent_name].append(1. if winner == agent_name else 0.)
+            self.tournament_wins[agent_name].append(1.0 if winner == agent_name else 0.0)
 
             if self.played_games[agent_name] % self.baseline_condition == 0:
                 self.baseline_eval(agent_name)
