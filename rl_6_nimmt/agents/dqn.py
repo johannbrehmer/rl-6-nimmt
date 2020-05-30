@@ -84,7 +84,7 @@ class DQNVanilla(Agent):
     def _finish_episode(self):
         pass
 
-    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, *args, **kwargs):
+    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
 
         self.step += 1
 
@@ -96,7 +96,7 @@ class DQNVanilla(Agent):
 
         if self.summary_writer is not None and episode_end:
             self.summary_writer.add_scalar("debug/eps", self.eps, num_episode)
-        self._store(state=state, reward=reward, action=action, next_state=next_state, done=done)
+        self._store(state=state, reward=reward, action=action, next_state=next_state, done=done, legal_actions=legal_actions)
 
         if len(self.history) > self._min_history_length():
 
@@ -186,14 +186,22 @@ class DQNVanilla(Agent):
 
         return q_targets
 
-    def _action_selection(self, scores):
+    def _action_selection(self, scores, **kwargs):
         """epsilon greedy slection"""
+
+        legal_actions = kwargs.get('legal_actions', None)
+        actions = np.arange(self.num_actions)
+        if legal_actions:
+            scores = scores[legal_actions]
+            actions = actions[legal_actions]
+
         if random.random() > self.eps:
             value = np.max(scores.cpu().data.numpy())
-            action = np.argmax(scores.cpu().data.numpy())
+            action_id = np.argmax(scores.cpu().data.numpy())
+            action = actions[action_id]
             logger.debug(f"action: {action}. eps: {self.eps}, value: {value}")
         else:
-            action = random.choice(np.arange(self.num_actions))
+            action = random.choice(actions)
             value = -1
             logger.debug(f"random action: {action}. eps: {self.eps}")
 
@@ -205,13 +213,12 @@ class DQNVanilla(Agent):
 
 
         """
-
         # state = torch.from_numpy(state).unsqueeze(0)
         self.dqn_net_local.eval()
         with torch.no_grad():
             scores = self.dqn_net_local(state)[0]
         self.dqn_net_local.train()
-        return self._action_selection(scores)
+        return self._action_selection(scores, **kwargs)
         # Epsilon -greedy action selection
 
 
@@ -232,11 +239,16 @@ class Noisy_DQN(DQNVanilla):
             init_sigma=self.noisy_init_sigma,
         )
 
-    def _action_selection(self, scores):
+    def _action_selection(self, scores, **kwargs):
         """argmax selection"""
-
+        legal_actions = kwargs.get('legal_actions', None)
+        actions = np.arange(self.num_actions)
+        if legal_actions:
+            scores = scores[legal_actions]
+            actions = actions[legal_actions]
         value = np.max(scores.cpu().data.numpy())
-        action = np.argmax(scores.cpu().data.numpy())
+        action_id = np.argmax(scores.cpu().data.numpy())
+        action = actions[action_id]
         return action, {"value": value}
 
 
@@ -265,6 +277,8 @@ class DQN_NStep_Agent(DQNVanilla):
     #     return experiences
 
     def _finish_episode(self):
+        if len(self.n_step_buffer) == 0:
+            return
         last_experience = self.n_step_buffer[-1]
         while len(self.n_step_buffer) > 0:
             R = sum([self.n_step_buffer[i][REWARD] * (self.gamma ** i) for i in range(len(self.n_step_buffer))])
