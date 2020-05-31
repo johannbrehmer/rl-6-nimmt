@@ -96,7 +96,7 @@ class DQNVanilla(Agent):
 
         if self.summary_writer is not None and episode_end:
             self.summary_writer.add_scalar("debug/eps", self.eps, num_episode)
-        self._store(state=state, reward=reward, action=action, next_state=next_state, done=done, legal_actions=legal_actions)
+        self._store(state=state, reward=reward, action=action, next_state=next_state, done=done)
 
         if len(self.history) > self._min_history_length():
 
@@ -142,22 +142,29 @@ class DQNVanilla(Agent):
 
     def _prep_minibatch(self, experiences):
         for key, item in experiences.items():
-            if isinstance(item, list) and isinstance(item[0], (float, int, bool)):
-                experiences[key] = torch.Tensor(item).to(self.device)
-            elif isinstance(item, list) and isinstance(item[0], np.number):
-                experiences[key] = torch.from_numpy(np.array(item)).to(self.device)
-            elif isinstance(item, np.ndarray):
-                experiences[key] = torch.from_numpy(item).to(self.device)
-            elif isinstance(item, torch.Tensor):
-                experiences[key] = item.squeeze().to(self.device)
-            elif isinstance(item[0], torch.Tensor):
+            if isinstance(item[0], torch.Tensor):
                 experiences[key] = torch.stack(item, dim=0).to(self.device)
+            else:
+                experiences[key] = torch.from_numpy(np.array(item))
+
+            # if isinstance(item, list) and isinstance(item[0], (float)):
+            #     experiences[key] = torch.Tensor(item).to(self.device)
+            # elif isinstance(item, list) and isinstance(item[0], (int, bool, np.int)):
+            #     experiences[key] = torch.from_numpy(item).to(self.device, dtype = torch.int)
+            # # elif isinstance(item, list) and isinstance(item[0], (float, int, np.number)):
+            # #     experiences[key] = torch.from_numpy(np.array(item)).to(self.device)
+            # elif isinstance(item, np.ndarray):
+            #     experiences[key] = torch.from_numpy(item).to(self.device)
+            # elif isinstance(item, torch.Tensor):
+            #     experiences[key] = item.squeeze().to(self.device)
+            # elif isinstance(item[0], torch.Tensor):
+            #     experiences[key] = torch.stack(item, dim=0).to(self.device)
             # elif key == "action":
             #     experiences[key] = torch.from_numpy(item).long().to(self.device)
             # elif isinstance(item[0], torch.Tensor):
             #     experiences[key] = torch.cat(item)
-            else:
-                raise NotImplementedError(f"Unkown type {type(item[0])}")
+            # else:
+            #     raise NotImplementedError(f"Unkown type {type(item[0])}")
         return experiences
 
     def _optimize_loss(self, q_eval, q_target, weights):
@@ -190,22 +197,24 @@ class DQNVanilla(Agent):
         """epsilon greedy slection"""
 
         legal_actions = kwargs.get('legal_actions', None)
-        actions = np.arange(self.num_actions)
+
         if legal_actions:
-            scores = scores[legal_actions]
-            actions = actions[legal_actions]
+            illegal_actions = list(set(np.arange(self.num_actions)) - set(legal_actions))
+            scores[illegal_actions] = -1e8
 
         if random.random() > self.eps:
             value = np.max(scores.cpu().data.numpy())
             action_id = np.argmax(scores.cpu().data.numpy())
-            action = actions[action_id]
-            logger.debug(f"action: {action}. eps: {self.eps}, value: {value}")
+            #action = actions[action_id]
+            logger.debug(f"action: {action_id}. eps: {self.eps}, value: {value}")
         else:
-            action = random.choice(actions)
+            action_id = random.choice(np.arange(self.num_actions))
+            if legal_actions:
+                action_id = random.choice(legal_actions)
             value = -1
-            logger.debug(f"random action: {action}. eps: {self.eps}")
+            logger.debug(f"random action: {action_id}. eps: {self.eps}")
 
-        return action, {"value": value, "eps": self.eps}
+        return action_id, {"value": value, "eps": self.eps}
 
     def forward(self, state, **kwargs):
         """
