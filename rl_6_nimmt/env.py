@@ -13,7 +13,7 @@ class InvalidMoveException(Exception):
 class SechsNimmtEnv(Env):
     """ OpenAI gym environment for the card game 6 Nimmt! """
 
-    def __init__(self, num_players, num_rows=4, num_cards=104, threshold=6, include_summaries=True, player_names=None):
+    def __init__(self, num_players, num_rows=4, num_cards=104, threshold=6, include_summaries=True, player_names=None, verbose=True):
         super().__init__()
 
         assert num_players > 0
@@ -38,10 +38,23 @@ class SechsNimmtEnv(Env):
         self.observation_space = Box(low=-1.0, high=2.0, shape=state_shape, dtype=np.float)
         self.spec = None
 
+        self.verbose = verbose
+
     def reset(self):
         """ Resets the state of the environment and returns an initial observation. """
 
         self._deal()
+        self._scores = np.zeros(self._num_players, dtype=np.int)
+
+        states = self._create_states()
+
+        return states
+
+    def reset_to(self, board, hands):
+        """ Initializes a game for given board and hands """
+
+        self._board = board
+        self._hands = hands
         self._scores = np.zeros(self._num_players, dtype=np.int)
 
         states = self._create_states()
@@ -86,7 +99,7 @@ class SechsNimmtEnv(Env):
     def _deal(self):
         """ Deals random cards to all players and initiates the game board """
 
-        logger.debug("Dealing cards")
+        if self.verbose: logger.debug("Dealing cards")
         cards = np.arange(0, self._num_cards, 1, dtype=np.int)
         np.random.shuffle(cards)
         cards = list(cards)
@@ -112,7 +125,7 @@ class SechsNimmtEnv(Env):
         actions = sorted(actions, key=lambda x: x[0])
 
         for card, player in actions:
-            logger.debug(f"{self._player_name(player)} plays card {card + 1}")
+            if self.verbose: logger.debug(f"{self._player_name(player)} plays card {card + 1}")
             row, replaced = self._find_row(card)
             self._board[row].append(card)
             self._hands[player].remove(card)
@@ -129,7 +142,7 @@ class SechsNimmtEnv(Env):
 
         if card < thresholds[-1][1]:
             row = self._pick_row_to_replace()
-            logger.debug(f"  ...chooses to replace row {row + 1}")
+            if self.verbose: logger.debug(f"  ...chooses to replace row {row + 1}")
             return row, True
 
         for row, threshold in thresholds:
@@ -149,7 +162,7 @@ class SechsNimmtEnv(Env):
         """ Assigns points from a full row, and resets that row """
         cards = self._board[row]
         penalty = self._row_value(cards)
-        logger.debug(f"  ...and gains {penalty} Hornochsen")
+        if self.verbose: logger.debug(f"  ...and gains {penalty} Hornochsen")
 
         self._scores[player] += penalty
         rewards = np.zeros(self._num_players, dtype=np.int)
