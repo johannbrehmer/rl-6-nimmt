@@ -1,10 +1,20 @@
+import math
+import torch
+from torch import nn
+from torch.distributions import Categorical
+import numpy as np
+import logging
+
 from ..env import SechsNimmtEnv
 from .base import Agent
-import math
-import numpy as np
+from ..utils.nets import MultiHeadedMLP
+from ..utils.preprocessing import SechsNimmtStateNormalization
+
+logger = logging.getLogger(__name__)
 
 
-class MCTSAgent(Agent):
+
+class BaseMCAgent(Agent):
     def __init__(
         self,
         handsize=10,
@@ -12,7 +22,7 @@ class MCTSAgent(Agent):
         num_cards=104,
         threshold=6,
         mc_per_card=10,
-        mc_max=10000,
+        mc_max=100,
         include_summaries=True,
         *args,
         **kwargs
@@ -40,14 +50,14 @@ class MCTSAgent(Agent):
 
         # Pick action through a kind of MCTS
         if n == 1:
-            action = legal_actions[0]
+            action, info = legal_actions[0], {"log_prob": 0.}
         else:
-            action = self._mcts(legal_actions, state)
+            action, info = self._mcts(legal_actions, state)
 
-        return action, {}
+        return action, info
 
     def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
-        pass
+        raise NotImplementedError
 
     def _initialize_game(self, state):
         self.available_cards = list(range(self.num_cards))
@@ -82,14 +92,16 @@ class MCTSAgent(Agent):
         n = len(legal_actions)
         n_mc = self._compute_n_mc(n)
         outcomes = {action : [] for action in legal_actions}
+        log_probs = {action : [] for action in legal_actions}
 
         for _ in range(n_mc):
             env = self._draw_env(legal_actions, state)
-            action, outcome = self._play_out(env)
+            action, log_prob, outcome = self._play_out(env)
             outcomes[action].append(outcome)
+            log_probs[action].append(log_prob)
 
-        action = self._choose_action_from_outcomes(outcomes)
-        return action
+        action, info = self._choose_action_from_outcomes(outcomes, log_probs)
+        return action, info
 
     def _compute_n_mc(self, n_actions):
         return min(self.mc_max, self.mc_per_card * math.factorial(n_actions))
@@ -119,16 +131,18 @@ class MCTSAgent(Agent):
         states, all_legal_actions = env._create_states()
         done = False
         outcome = 0.
-        first_player_action = None
+        initial_action = None
+        initial_log_prob = None
 
         while not done:
             actions, agent_infos = [], []
             for i, (state, legal_actions) in enumerate(zip(states, all_legal_actions)):
-                action = self._choose_action_mc(legal_actions, state, opponent=(i > 0))
+                action, log_prob = self._choose_action_mc(legal_actions, state, opponent=(i > 0))
                 actions.append(int(action))
 
-            if first_player_action is None:
-                first_player_action = actions[0]
+                if initial_action is None:
+                    initial_action = action
+                    initial_log_prob = log_prob
 
             (next_states, next_all_legal_actions), next_rewards, done, _ = env.step(actions)
 
@@ -136,9 +150,9 @@ class MCTSAgent(Agent):
             states = next_states
             all_legal_actions = next_all_legal_actions
 
-        return first_player_action, outcome
+        return initial_action, initial_log_prob, outcome
 
-    def _choose_action_from_outcomes(self, outcomes):
+    def _choose_action_from_outcomes(self, outcomes, log_probs):
         best_action = list(outcomes.keys())[0]
         best_mean = - float("inf")
 
@@ -147,12 +161,91 @@ class MCTSAgent(Agent):
                 best_action = action
                 best_mean = np.mean(outcome)
 
-        return best_action
+        info = {"log_prob": log_probs[best_action]}
+
+        return best_action, info
 
     def _choose_action_mc(self, legal_actions, state, opponent=False):
         raise NotImplementedError
 
 
-class RandomMCTSAgent(MCTSAgent):
+class MCSAgent(BaseMCAgent):
+    """ Monte-Carlo search based on entirely random moves by all players """
+
+    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
+        pass
+
     def _choose_action_mc(self, legal_actions, state, opponent=False):
-        return np.random.choice(np.array(legal_actions, dtype=np.int), size=1)[0]
+        return np.random.choice(np.array(legal_actions, dtype=np.int), size=1)[0], None
+
+
+class PolicyMCSAgent(BaseMCAgent):
+    """ Monte-Carlo search based on a learnable policy, similar to AlphaZero (but without a critic and without UCB) """
+
+    def __init__(
+        self,
+        hidden_sizes=(100, 100,),
+        activation=nn.ReLU(),
+        r_factor=0.1,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.r_factor = r_factor
+
+        self.preprocessor = SechsNimmtStateNormalization(action=True)
+        self.actor = MultiHeadedMLP(self.state_length + 1, hidden_sizes=hidden_sizes, head_sizes=(1,), activation=activation, head_activations=(None,))
+        self.softmax = nn.Softmax(dim=0)
+
+    def _choose_action_mc(self, legal_actions, state, opponent=False):
+        batch_states = []
+        for action in legal_actions:
+            action_ = torch.tensor([action]).to(self.device, self.dtype)
+            batch_states.append(torch.cat((action_, state), dim=0).unsqueeze(0))
+        batch_states = torch.cat(batch_states, dim=0)
+
+        batch_states = self.preprocessor(batch_states)
+        (probs,) = self.actor(batch_states)
+        probs = self.softmax(probs).flatten()
+
+        # Sample action from these probabilities
+        cat = Categorical(probs)
+        action_id = cat.sample()
+        log_prob = cat.log_prob(action_id)
+        action = legal_actions[action_id]
+
+        return int(action), log_prob
+
+    def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
+        # Memorize step
+        self.history.store(log_prob=kwargs["log_prob"], reward=reward * self.r_factor)
+
+        # No further steps after each step
+        if not episode_end or not self.training:
+            return 0.
+
+        # Gradient updates
+        loss = self._train()
+
+        # Reset memory for next episode
+        self.history.clear()
+
+        return loss
+
+    def _train(self):
+        # Roll out last episode
+        rollout = self.history.rollout()
+        log_probs = torch.stack(rollout["log_prob"], dim=0)
+
+        # Compute loss
+        loss = -torch.sum(log_probs)  # train policy to get closer to (deterministic) MCS choice
+
+        # Gradient update
+        self._gradient_step(loss)
+
+        return loss.item()
+
+    def _gradient_step(self, loss):
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
