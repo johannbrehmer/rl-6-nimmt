@@ -7,7 +7,7 @@ from .dqn import DQN_PRBAgent, DDQN_PRBAgent, DuellingDDQN_PRBAgent, D3QN_PRB_NS
 from .dqn import Noisy_DQN, Noisy_D3QN_PRB_NStep, Noisy_D3QN
 from .actor_critic import BatchedACERAgent
 from .policy import MaskedReinforceAgent, BatchedReinforceAgent
-from .mcts import MCSAgent, PolicyMCSAgent
+from .mcts import MCSAgent, PolicyMCSAgent, PUCTAgent
 
 
 HUMAN = "human"
@@ -27,7 +27,8 @@ DUELLING_DQN = "duelling_dqn"
 DUELLING_DDQN = "duelling_ddqn"
 NOISY_D3QN = "noisy_d3qn"
 MCS = "mcts"
-ZERO = "zero"
+PMCS = "pmcs"
+PUCT = "puct"
 
 AGENTS = {
     HUMAN: Human,
@@ -47,7 +48,8 @@ AGENTS = {
     NOISY_D_QN_PRB_NSTEP: Noisy_D3QN_PRB_NStep,
     NOISY_D3QN: Noisy_D3QN,
     MCS: MCSAgent,
-    ZERO: PolicyMCSAgent,
+    PMCS: PolicyMCSAgent,
+    PUCT: PUCTAgent,
 }
 
 POLICY_METHODS = [REINFORCE, ACER]

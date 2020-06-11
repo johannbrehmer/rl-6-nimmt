@@ -50,7 +50,7 @@ class BaseMCAgent(Agent):
 
         # Pick action through a kind of MCTS
         if n == 1:
-            action, info = legal_actions[0], {"log_prob": 0.}
+            action, info = legal_actions[0], {"log_prob": torch.tensor(0.).to(self.device, self.dtype)}
         else:
             action, info = self._mcts(legal_actions, state)
 
@@ -96,7 +96,7 @@ class BaseMCAgent(Agent):
 
         for _ in range(n_mc):
             env = self._draw_env(legal_actions, state)
-            action, log_prob, outcome = self._play_out(env)
+            action, log_prob, outcome = self._play_out(env, outcomes)
             outcomes[action].append(outcome)
             log_probs[action].append(log_prob)
 
@@ -127,8 +127,9 @@ class BaseMCAgent(Agent):
 
         return hands
 
-    def _play_out(self, env):
+    def _play_out(self, env, outcomes):
         states, all_legal_actions = env._create_states()
+        states = self._tensorize(states)
         done = False
         outcome = 0.
         initial_action = None
@@ -137,7 +138,7 @@ class BaseMCAgent(Agent):
         while not done:
             actions, agent_infos = [], []
             for i, (state, legal_actions) in enumerate(zip(states, all_legal_actions)):
-                action, log_prob = self._choose_action_mc(legal_actions, state, opponent=(i > 0))
+                action, log_prob = self._choose_action_mc(legal_actions, state, outcomes, first_move=(initial_action is None), opponent=(i > 0))
                 actions.append(int(action))
 
                 if initial_action is None:
@@ -145,6 +146,7 @@ class BaseMCAgent(Agent):
                     initial_log_prob = log_prob
 
             (next_states, next_all_legal_actions), next_rewards, done, _ = env.step(actions)
+            next_states = self._tensorize(next_states)
 
             outcome += next_rewards[0]
             states = next_states
@@ -161,12 +163,20 @@ class BaseMCAgent(Agent):
                 best_action = action
                 best_mean = np.mean(outcome)
 
-        info = {"log_prob": log_probs[best_action]}
+        info = {"log_prob": log_probs[best_action][0]}
+
+        logger.debug("AlphaAlmostZero thoughts:")
+        for action, outcome in outcomes.items():
+            chosen = 'x' if action == best_action else ' '
+            logger.debug(f"  {chosen} {action + 1:>3d}: p = {np.exp(log_probs[action][0].detach().numpy()):.2f}, n = {len(outcome):>3d}, E[r] = {np.mean(outcome):>5.1f}")
 
         return best_action, info
 
-    def _choose_action_mc(self, legal_actions, state, opponent=False):
+    def _choose_action_mc(self, legal_actions, state, outcomes, first_move=True, opponent=False):
         raise NotImplementedError
+
+    def _tensorize(self, inputs):
+        return [torch.tensor(input).to(self.device, self.dtype) for input in inputs]
 
 
 class MCSAgent(BaseMCAgent):
@@ -175,7 +185,7 @@ class MCSAgent(BaseMCAgent):
     def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
         pass
 
-    def _choose_action_mc(self, legal_actions, state, opponent=False):
+    def _choose_action_mc(self, legal_actions, state, outcomes, first_move=True, opponent=False):
         return np.random.choice(np.array(legal_actions, dtype=np.int), size=1)[0], None
 
 
@@ -197,24 +207,26 @@ class PolicyMCSAgent(BaseMCAgent):
         self.actor = MultiHeadedMLP(self.state_length + 1, hidden_sizes=hidden_sizes, head_sizes=(1,), activation=activation, head_activations=(None,))
         self.softmax = nn.Softmax(dim=0)
 
-    def _choose_action_mc(self, legal_actions, state, opponent=False):
-        batch_states = []
-        for action in legal_actions:
-            action_ = torch.tensor([action]).to(self.device, self.dtype)
-            batch_states.append(torch.cat((action_, state), dim=0).unsqueeze(0))
-        batch_states = torch.cat(batch_states, dim=0)
+    def _choose_action_mc(self, legal_actions, state, outcomes, first_move=True, opponent=False):
+        probs = self._compute_policy(legal_actions, state)
 
-        batch_states = self.preprocessor(batch_states)
-        (probs,) = self.actor(batch_states)
-        probs = self.softmax(probs).flatten()
-
-        # Sample action from these probabilities
         cat = Categorical(probs)
         action_id = cat.sample()
         log_prob = cat.log_prob(action_id)
         action = legal_actions[action_id]
 
         return int(action), log_prob
+
+    def _compute_policy(self, legal_actions, state):
+        batch_states = []
+        for action in legal_actions:
+            action_ = torch.tensor([action]).to(self.device, self.dtype)
+            batch_states.append(torch.cat((action_, state), dim=0).unsqueeze(0))
+        batch_states = torch.cat(batch_states, dim=0)
+        batch_states = self.preprocessor(batch_states)
+        (probs,) = self.actor(batch_states)
+        probs = self.softmax(probs).flatten()
+        return probs
 
     def learn(self, state, reward, action, done, next_state, next_reward, episode_end, num_episode, legal_actions, *args, **kwargs):
         # Memorize step
@@ -249,3 +261,65 @@ class PolicyMCSAgent(BaseMCAgent):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+
+class PUCTAgent(PolicyMCSAgent):
+    def __init__(
+        self,
+        c_puct = 2.,
+        temperature=None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.c_puct = c_puct
+        self.temperature = temperature
+
+    def _choose_action_mc(self, legal_actions, state, outcomes, first_move=True, opponent=False):
+        # Opponents and subsequent moves are just drawn from policy, since we are almost certain to never have encountered that situation anyway
+        if (not first_move) or opponent:
+            return super()._choose_action_mc(legal_actions, state, outcomes, first_move, opponent)
+
+        # For first move, use PUCT
+        probs = self._compute_policy(legal_actions, state)
+        pucts = self._compute_pucts(legal_actions, outcomes, probs)
+
+        # Pick highest
+        best_puct = - float("inf")
+        choice = 0
+        for i, puct in enumerate(pucts):
+            if puct > best_puct:
+                best_puct = puct
+                choice = i
+
+        return int(legal_actions[choice]), torch.log(probs[choice])
+
+    def _compute_pucts(self, legal_actions, outcomes, probs):
+        n = np.array([len(outcomes[action]) for action in legal_actions])
+        n_total = sum(n)
+        max_return, min_return, mean_return = self._normalize_q(outcomes)
+        q = np.array([mean_return if not outcomes[action] else np.mean(outcomes[action]) for action in legal_actions])
+        q = np.clip((q - min_return) / (max_return - min_return), 0., 1.)
+        pucts = q + self.c_puct * probs.detach().numpy() * (n_total + 1.e-9) ** 0.5 / (1. + n)
+        return pucts
+
+    def _normalize_q(self, outcomes):
+        all_outcomes = []
+        for outcome in outcomes.values():
+            all_outcomes += outcome
+
+        if len(all_outcomes) < 10:
+            return 0., -10., -5.  # TODO: don't hardcode this
+
+        min_ = np.min(all_outcomes)
+        max_ = np.max(all_outcomes)
+        mean_ = np.median(all_outcomes)
+        return max_, min_, mean_
+
+
+    def _choose_action_from_outcomes(self, outcomes, log_probs):
+        if self.temperature is None or self.temperature <= 1.e-12:
+            return super()._choose_action_from_outcomes(outcomes, log_probs)
+
+        # TODO: sampling from visited moves with probability ~ n(a)^(1/temperature)
+        raise NotImplementedError
