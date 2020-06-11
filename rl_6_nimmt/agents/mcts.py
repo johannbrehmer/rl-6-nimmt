@@ -186,7 +186,7 @@ class MCSAgent(BaseMCAgent):
         pass
 
     def _choose_action_mc(self, legal_actions, state, outcomes, first_move=True, opponent=False):
-        return np.random.choice(np.array(legal_actions, dtype=np.int), size=1)[0], None
+        return np.random.choice(np.array(legal_actions, dtype=np.int), size=1)[0], torch.tensor(0.).to(self.device, self.dtype)
 
 
 class PolicyMCSAgent(BaseMCAgent):
