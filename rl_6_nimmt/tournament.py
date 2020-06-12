@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import logging
 import copy
-from collections import defaultdict
+import multi_elo
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ from .play import GameSession
 
 
 class Tournament:
-    def __init__(self, min_players=2, max_players=4, baseline_agents=None, baseline_num_games=1, baseline_condition=10):
+    def __init__(self, min_players=2, max_players=4, baseline_agents=None, baseline_num_games=1, baseline_condition=10, elo_initial=1600, elo_k=32):
         assert 0 < min_players <= max_players
 
         self.min_players = min_players
@@ -18,6 +18,8 @@ class Tournament:
         self.baseline_agents = baseline_agents
         self.baseline_num_games = baseline_num_games
         self.baseline_condition = baseline_condition
+        self.elo_initial=elo_initial
+        self.elo_k = elo_k
 
         self.total_games = 0
         self.agents = dict()
@@ -30,6 +32,7 @@ class Tournament:
         self.baseline_scores = dict()
         self.baseline_positions = dict()
         self.baseline_wins = dict()
+        self.elos = dict()
 
     def add_player(self, name, agent):
         assert name not in self.agents.keys()
@@ -46,9 +49,10 @@ class Tournament:
         self.baseline_scores[name] = []
         self.baseline_positions[name] = []
         self.baseline_wins[name] = []
+        self.elos[name] = [self.elo_initial]
 
     def copy_player(self, old_name, new_name):
-        for q in [self.active, self.descendants, self.played_games, self.tournament_scores, self.tournament_positions, self.tournament_wins, self.baseline_scores, self.baseline_positions, self.baseline_wins]:
+        for q in [self.active, self.elos, self.descendants, self.played_games, self.tournament_scores, self.tournament_positions, self.tournament_wins, self.baseline_scores, self.baseline_positions, self.baseline_wins]:
             q[new_name] = copy.deepcopy(q[old_name])
 
         # Deepcopy does not work for PyTorch models, so this is ugly
@@ -67,24 +71,37 @@ class Tournament:
             del self.baseline_scores[name]
             del self.baseline_positions[name]
             del self.baseline_wins[name]
+            del self.elos[name]
         else:
             self.active[name] = False
 
-    def evolve(self, copies=(2, 2, 2), max_players=None, max_per_descendant=4, metric="tournament_scores"):
-        agent_names = self.agents.keys()
+    def evolve(self, copies=(2,), max_players=None, max_per_descendant=2, metric="elo"):
         if metric == "tournament_scores":
             scores = self.tournament_scores
             reverse = True
+            mean = True
         elif metric == "tournament_positions":
             scores = self.tournament_positions
             reverse = False
+            mean = True
         elif metric == "tournament_wins":
             scores = self.tournament_wins
             reverse = False
+            mean = True
+        elif metric == "elo":
+            scores = self.elos
+            reverse = True
+            mean = False
         else:
             raise NotImplementedError(metric)
 
-        agents_by_scores = sorted(agent_names, key=lambda x : np.mean(scores[x]) if len(scores[x]) > 0 else 0., reverse=reverse)
+        if mean:
+            key = lambda x : (np.mean(scores[x]) if len(scores[x]) > 0 else 0.)
+        else:
+            key = lambda x : (scores[x][-1] if len(scores[x]) > 0 else 0.)
+
+        agent_names = self.active_agents()
+        agents_by_scores = sorted(agent_names, key=key, reverse=reverse)
 
         new_count = 0
         new_descendants = {}
@@ -118,18 +135,33 @@ class Tournament:
         session = GameSession(*agents)
         session.play_game(render=False)
         scores = session.results[0]
+        self.score_game(agent_names, scores)
+
+    def score_game(self, agent_names, scores):
         relative_positions = self._compute_relative_positions(scores)
         winner = agent_names[np.argmax(scores)]
+        new_elos = self._compute_elos(agent_names, scores)
 
         self.total_games += 1
-        for agent_name, score, rel_pos in zip(agent_names, scores, relative_positions):
+
+        for agent_name, score, rel_pos, elo in zip(agent_names, scores, relative_positions, new_elos):
             self.played_games[agent_name] += 1
             self.tournament_scores[agent_name].append(score)
             self.tournament_positions[agent_name].append(rel_pos)
             self.tournament_wins[agent_name].append(1.0 if winner == agent_name else 0.0)
+            self.elos[agent_name].append(elo)
 
             if self.played_games[agent_name] % self.baseline_condition == 0:
                 self.baseline_eval(agent_name)
+
+    def _compute_elos(self, agent_names, scores):
+        old_elos = [self.elos[name][-1] for name in agent_names]
+        positions = self._compute_absolute_positions(scores)
+        players = [multi_elo.EloPlayer(place=place, elo=old_elo) for place, old_elo in zip(positions, old_elos)]
+
+        new_elos = multi_elo.calc_elo(players, self.elo_k)
+
+        return new_elos
 
     def _choose_players(self, num_players):
         if num_players is None:
@@ -174,21 +206,20 @@ class Tournament:
         return winner
 
     def __str__(self):
-        hline = "----------------------------------------------------------------------------------------------------"
+        hline = "-----------------------------------------------------------------"
         lines = [f"Tournament after {self.total_games} games:"]
         lines.append(hline)
-        lines.append(" Agent                | Games | Tournament score | Tournament wins | Baseline score | Baseline wins ")
+        lines.append(" Agent                | Games | Mean score | Win fraction |  ELO ")
         lines.append(hline)
 
         for name in self.agents.keys():
             if not self.active[name]:
                 continue
 
-            t_score = "-" if not self.tournament_scores[name] else f"{np.mean(self.tournament_scores[name]):>5.2f}"
-            t_pos = "-" if not self.tournament_wins[name] else f"{np.mean(self.tournament_wins[name]):>5.2f}"
-            b_score = "-" if not self.baseline_scores[name] else f"{np.mean(self.baseline_scores[name]):>5.2f}"
-            b_pos = "-" if not self.baseline_wins[name] else f"{np.mean(self.baseline_wins[name]):>5.2f}"
-            lines.append(f" {name:>20s} | {self.played_games[name]:>5} | {t_score:>16} | {t_pos:>15} | {b_score:>14} | {b_pos:>13} ")
+            score = "-" if not self.tournament_scores[name] else f"{np.mean(self.tournament_scores[name]):>5.2f}"
+            wins = "-" if not self.tournament_wins[name] else f"{np.mean(self.tournament_wins[name]):>5.2f}"
+
+            lines.append(f" {name:>20s} | {self.played_games[name]:>5} | {score:>10} | {wins:>12} | {self.elos[name][-1]:>4.0f} ")
 
         lines.append(hline)
 
@@ -196,11 +227,10 @@ class Tournament:
             if self.active[name]:
                 continue
 
-            t_score = "-" if not self.tournament_scores[name] else f"{np.mean(self.tournament_scores[name]):>5.2f}"
-            t_pos = "-" if not self.tournament_wins[name] else f"{np.mean(self.tournament_wins[name]):>5.2f}"
-            b_score = "-" if not self.baseline_scores[name] else f"{np.mean(self.baseline_scores[name]):>5.2f}"
-            b_pos = "-" if not self.baseline_wins[name] else f"{np.mean(self.baseline_wins[name]):>5.2f}"
-            lines.append(f"[{name:>20s} | {self.played_games[name]:>5} | {t_score:>16} | {t_pos:>15} | {b_score:>14} | {b_pos:>13}]")
+            score = "-" if not self.tournament_scores[name] else f"{np.mean(self.tournament_scores[name]):>5.2f}"
+            wins = "-" if not self.tournament_wins[name] else f"{np.mean(self.tournament_wins[name]):>5.2f}"
+
+            lines.append(f" {name:>20s} | {self.played_games[name]:>5} | {score:>10} | {wins:>12} | {self.elos[name][-1]:>4.0f} ")
 
         if lines[-1] != hline:
             lines.append(hline)
@@ -208,7 +238,17 @@ class Tournament:
         return "\n".join(lines)
 
     @staticmethod
+    def _compute_absolute_positions(scores):
+        """ 0 = best, n_players - 1 = worst """
+        epsilon = 0.5
+        positions_l = np.array([np.searchsorted(sorted(- scores), - score - epsilon) for score in scores], dtype=np.float)
+        positions_r = 1.0 + np.array([np.searchsorted(sorted(- scores), - score + epsilon) for score in scores], dtype=np.float)
+        positions = 0.5 * (positions_l + positions_r)
+        return positions
+
+    @staticmethod
     def _compute_relative_positions(scores):
+        """ 1 = best, 0 = worst """
         epsilon = 0.5
         positions_l = np.array([np.searchsorted(sorted(scores), score + epsilon) for score in scores], dtype=np.float)
         positions_r = 1.0 + np.array([np.searchsorted(sorted(scores), score - epsilon) for score in scores], dtype=np.float)
