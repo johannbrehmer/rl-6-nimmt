@@ -99,7 +99,10 @@ class BatchedActionValueActorCriticAgent(Agent):
         cat = Categorical(torch.exp(torch.clamp(log_probs, -20)))
         action_id = len(legal_actions)
         while action_id >= len(legal_actions):
-            action_id = cat.sample()
+            try:
+                action_id = cat.sample()
+            except RuntimeError:  # Sometimes something weird happens here...
+                logger.error("Error sampling action! Log probabilities: %s", log_probs)
         return action_id
 
     def _pad(self, inputs, value=None):
