@@ -56,7 +56,7 @@ After this self-play phase, the Alpha0.5 agent faced Merle, one of the best 6 ni
 Assuming you have anaconda installed, clone the repo with
 
 ```
-git clone git@github.com:johannbrehmer/rl-6nimmt.git
+git clone git@github.com:johannbrehmer/rl-6-nimmt.git
 ```
 
 and create a virtual environment with
